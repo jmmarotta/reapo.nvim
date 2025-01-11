@@ -5,7 +5,7 @@ function M.setup(user_config)
 
   -- Create user commands
   vim.api.nvim_create_user_command("ReapoChat", function()
-    require("reapo.ui").open_chat_prompt(config)
+    require("reapo.ui").open_chat(config)
   end, {})
 
   vim.api.nvim_create_user_command("ReapoChatHistory", function()
