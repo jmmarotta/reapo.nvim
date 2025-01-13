@@ -228,6 +228,55 @@ local function create_chat_win()
   return buf, win
 end
 
+local function update_streaming_content(content)
+  print("update_streaming_content", content)
+  if not current_buf or not vim.api.nvim_buf_is_valid(current_buf) then
+    return
+  end
+
+  -- Make buffer modifiable
+  vim.api.nvim_buf_set_option(current_buf, "modifiable", true)
+
+  -- Get the last message (which should be the assistant's response)
+  local last_message = chat_history[#chat_history]
+  if last_message and last_message.role == "assistant" then
+    -- Update the content of the last message
+    last_message.content = last_message.content .. content
+  else
+    -- Create new assistant message if none exists
+    table.insert(chat_history, { role = "assistant", content = content })
+  end
+
+  -- Update the display
+  local lines = vim.split(last_message.content, "\n", { plain = true })
+  local start_line = #chat_history - 1
+
+  -- Format the message with the role icon
+  local role_icon = "󰚩 "
+  local formatted_lines = {}
+  for i, line in ipairs(lines) do
+    if i == 1 then
+      table.insert(formatted_lines, role_icon .. line)
+    else
+      table.insert(formatted_lines, string.rep(" ", #role_icon) .. line)
+    end
+  end
+
+  -- Update the buffer
+  vim.api.nvim_buf_set_lines(current_buf, start_line, -1, false, formatted_lines)
+
+  -- Apply highlighting
+  local ns_id = vim.api.nvim_create_namespace("ReapoChat")
+  for i = start_line, start_line + #formatted_lines - 1 do
+    vim.api.nvim_buf_add_highlight(current_buf, ns_id, config.highlights.assistant, i, 0, -1)
+  end
+
+  vim.api.nvim_buf_set_option(current_buf, "modifiable", false)
+
+  -- Scroll to bottom
+  vim.api.nvim_win_set_cursor(current_win, { vim.api.nvim_buf_line_count(current_buf), 0 })
+end
+
 local function create_input_win()
   local main_width = vim.api.nvim_win_get_width(current_win)
   local main_row = vim.api.nvim_win_get_position(current_win)[1]
@@ -268,7 +317,6 @@ local function setup_input_keymaps()
     vim.keymap.set(mode, lhs, rhs, opts)
   end
 
-  -- Submit message with shift+enter
   set_keymap("n", "<CR>", function()
     local lines = vim.api.nvim_buf_get_lines(input_buf, 0, -1, false)
     local content = table.concat(lines, "\n"):gsub("^%s*", "")
@@ -282,15 +330,19 @@ local function setup_input_keymaps()
       vim.api.nvim_buf_set_lines(input_buf, 0, -1, false, { config.input.prompt })
       vim.api.nvim_win_set_cursor(input_win, { 1, #config.input.prompt })
 
-      -- Send request to API
-      http.send_chat_request(content, function(err, response)
-        vim.schedule(function()
-          if err then
+      -- Initialize empty assistant message for streaming
+      table.insert(chat_history, { role = "assistant", content = "" })
+
+      -- Send request to API with streaming handler
+      http.send_chat_request(content, function(err, _)
+        if err then
+          vim.schedule(function()
             vim.notify(err, vim.log.levels.ERROR)
-          else
-            table.insert(chat_history, { role = "assistant", content = response })
-            update_chat_content()
-          end
+          end)
+        end
+      end, function(_, delta)
+        vim.schedule(function()
+          update_streaming_content(delta)
         end)
       end)
     end

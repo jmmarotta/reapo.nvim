@@ -34,13 +34,16 @@ function M.send_chat_request(prompt, callback, on_stream)
         return
       end
 
-      print("Stream data received:", vim.inspect(data))
+      print("Received stream data:", data) -- Debug log
 
       -- Handle SSE events
       local event_type, json_str = data:match("event: (.-)%s+data: (.+)")
       if not event_type or not json_str then
+        print("Failed to parse SSE event") -- Debug log
         return
       end
+
+      print("Event type:", event_type) -- Debug log
 
       local ok, parsed = pcall(vim.fn.json_decode, json_str)
       if not ok then
@@ -55,8 +58,12 @@ function M.send_chat_request(prompt, callback, on_stream)
       elseif event_type == "content_block_delta" then
         if parsed.delta and parsed.delta.type == "text_delta" then
           local delta = parsed.delta.text
+          print("Received delta:", delta) -- Debug log
           if on_stream then
+            print("Calling on_stream callback") -- Debug log
             on_stream(nil, delta)
+          else
+            print("No on_stream callback provided") -- Debug log
           end
         end
       elseif event_type == "message_stop" then
